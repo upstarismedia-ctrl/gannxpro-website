@@ -1,4 +1,4 @@
-# app.py - GannXPro COMPLETE with Live Market Updates
+# app.py - GannXPro COMPLETE with Live Market Updates (Fixed)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,11 +10,6 @@ import time
 from datetime import datetime, timedelta
 from math import log, sqrt, exp
 from scipy.stats import norm
-import threading
-from streamlit_autorefresh import st_autorefresh
-
-# Auto refresh every 30 seconds
-st_autorefresh(interval=30 * 1000, key="data_refresh")
 
 # Website setup with professional theme
 st.set_page_config(
@@ -134,6 +129,18 @@ st.markdown("""
         color: #666;
         text-align: right;
     }
+    .refresh-button {
+        background-color: #28a745;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+    .refresh-button:hover {
+        background-color: #218838;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,8 +148,15 @@ st.markdown("""
 st.markdown('<div class="main-header">📈 GannXPro <span class="live-badge">LIVE</span></div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Market Intelligence Platform - Real Time Data</div>', unsafe_allow_html=True)
 
-# Display last update time
-st.markdown(f'<div class="last-update">Last Updated: {datetime.now().strftime("%H:%M:%S")} | Auto-refresh every 30 seconds</div>', unsafe_allow_html=True)
+# Auto-refresh functionality
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    st.markdown(f'<div class="last-update">Last Updated: {datetime.now().strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
+with col2:
+    if st.button("🔄 Refresh Now", use_container_width=True):
+        st.rerun()
+with col3:
+    st.markdown('<div style="text-align: right;">↻ Auto-refresh: Manual</div>', unsafe_allow_html=True)
 
 # ----------- GLOBAL STOCK LIST ----------- #
 def get_all_stocks():
@@ -473,7 +487,7 @@ def get_live_intraday_signal(symbol):
             return "🟡 WAIT - Mixed signals"
             
     except Exception as e:
-        return f"Signal unavailable: {str(e)}"
+        return f"Signal unavailable"
 
 # ----------- STREAMLIT UI ----------- #
 st.sidebar.header("🔧 Navigation")
@@ -482,6 +496,13 @@ app_mode = st.sidebar.radio(
     ["Stock Screener", "Market Dashboard", "Technical Analysis", "Option Chain", "Intraday Signals"],
     index=0
 )
+
+# Refresh button in sidebar
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Refresh All Data", use_container_width=True):
+    st.rerun()
+
+st.sidebar.markdown("**💡 Tip:** Click refresh button to update all data with latest market prices")
 
 # ----------- LIVE STOCK SCREENER TAB ----------- #
 if app_mode == "Stock Screener":
@@ -496,39 +517,24 @@ if app_mode == "Stock Screener":
     
     with col2:
         if st.button("🔄 Scan Live Data", type="primary", use_container_width=True):
-            with st.spinner("Scanning live market data..."):
-                stock_data = run_live_screener()
-                if stock_data:
-                    categorized = {
-                        'open_high': [s for s in stock_data if s['open_high']],
-                        'open_low': [s for s in stock_data if s['open_low']]
-                    }
-                    st.session_state.screener_results = categorized
-                    st.success(f"✅ Live scan complete! Found {len(categorized['open_high'])} Open=High and {len(categorized['open_low'])} Open=Low stocks")
-                else:
-                    st.error("No live data found. Please try again during market hours.")
+            st.session_state.screener_results = None
     
-    # Auto-refresh display
-    if 'screener_results' not in st.session_state:
-        stock_data = run_live_screener()
-        if stock_data:
-            categorized = {
-                'open_high': [s for s in stock_data if s['open_high']],
-                'open_low': [s for s in stock_data if s['open_low']]
-            }
-            st.session_state.screener_results = categorized
-    
-    # Display Live Results
-    if 'screener_results' in st.session_state:
-        results = st.session_state.screener_results
+    # Get live data
+    stock_data = run_live_screener()
+    if stock_data:
+        categorized = {
+            'open_high': [s for s in stock_data if s['open_high']],
+            'open_low': [s for s in stock_data if s['open_low']]
+        }
         
+        # Display Live Results
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"🔴 Open = High ({len(results['open_high'])} stocks)")
+            st.subheader(f"🔴 Open = High ({len(categorized['open_high'])} stocks)")
             st.markdown("**Bearish Pattern - Potential selling pressure**")
             
-            for stock in results['open_high']:
+            for stock in categorized['open_high']:
                 change_color = "market-up" if stock['change_today'] > 0 else "market-down"
                 st.markdown(f"""
                 <div class="stock-card open-high">
@@ -540,10 +546,10 @@ if app_mode == "Stock Screener":
                 """, unsafe_allow_html=True)
         
         with col2:
-            st.subheader(f"🟢 Open = Low ({len(results['open_low'])} stocks)")
+            st.subheader(f"🟢 Open = Low ({len(categorized['open_low'])} stocks)")
             st.markdown("**Bullish Pattern - Potential buying opportunity**")
             
-            for stock in results['open_low']:
+            for stock in categorized['open_low']:
                 change_color = "market-up" if stock['change_today'] > 0 else "market-down"
                 st.markdown(f"""
                 <div class="stock-card open-low">
@@ -553,6 +559,8 @@ if app_mode == "Stock Screener":
                     <span class="{change_color}">{stock['change_today']:+.2f}%</span>
                 </div>
                 """, unsafe_allow_html=True)
+    else:
+        st.info("Click 'Scan Live Data' to analyze stocks for Open=High and Open=Low patterns")
 
 # ----------- LIVE MARKET DASHBOARD TAB ----------- #
 elif app_mode == "Market Dashboard":
@@ -608,23 +616,6 @@ elif app_mode == "Market Dashboard":
                 st.metric(f"{symbol}", 
                          f"₹{data['current']:.2f}", 
                          f"{data['change']:.2f}%")
-    
-    # Live Market Insights
-    st.subheader("💡 Live Market Insights")
-    
-    # Generate insights based on current market data
-    if market_data:
-        nifty_change = market_data.get('nifty', {}).get('change', 0)
-        bank_change = market_data.get('banknifty', {}).get('change', 0)
-        
-        if nifty_change > 0.5 and bank_change > 0.5:
-            insight = "**Strong Bullish Momentum** - Both Nifty and Bank Nifty showing strength"
-        elif nifty_change < -0.5 and bank_change < -0.5:
-            insight = "**Bearish Pressure** - Market facing selling pressure"
-        else:
-            insight = "**Mixed Sentiment** - Market in consolidation phase"
-        
-        st.info(insight)
 
 # ----------- LIVE TECHNICAL ANALYSIS TAB ----------- #
 elif app_mode == "Technical Analysis":
@@ -677,18 +668,6 @@ elif app_mode == "Technical Analysis":
         
         with col4:
             st.metric("Live Price", f"₹{tech_data['current_price']:.2f}")
-        
-        # Live Analysis
-        st.subheader("📈 Live Analysis")
-        
-        if rsi > 70 and macd > macd_signal:
-            st.warning("**Caution:** Stock may be overbought. Consider taking profits or waiting for pullback.")
-        elif rsi < 30 and macd < macd_signal:
-            st.info("**Opportunity:** Stock may be oversold. Look for buying opportunities with proper risk management.")
-        elif price > sma_20 and macd > macd_signal:
-            st.success("**Bullish Setup:** Stock showing positive momentum with supporting indicators.")
-        else:
-            st.info("**Neutral:** Stock is in normal trading range. Wait for clearer signals.")
 
 # ----------- LIVE OPTION CHAIN TAB ----------- #
 elif app_mode == "Option Chain":
@@ -724,45 +703,6 @@ elif app_mode == "Option Chain":
         col2.metric("PCR", f"{option_data['pcr']:.2f}")
         col3.metric("Total CE OI", f"{option_data['total_ce_oi']:,}")
         col4.metric("Total PE OI", f"{option_data['total_pe_oi']:,}")
-        
-        # Live Option Chain Display
-        st.subheader("📋 Live Option Chain")
-        
-        current_expiry_data = [item for item in option_data['option_data'] if item['expiry'] == '25-Jan-2024']
-        
-        for strike in sorted(set([item['strike'] for item in current_expiry_data])):
-            call_data = next((item for item in current_expiry_data if item['strike'] == strike and item['type'] == 'CE'), None)
-            put_data = next((item for item in current_expiry_data if item['strike'] == strike and item['type'] == 'PE'), None)
-            
-            if call_data or put_data:
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
-                
-                with col1:
-                    st.write(f"**₹{strike}**")
-                
-                # Call Option
-                with col2:
-                    if call_data:
-                        st.markdown(f'<div class="call-option">', unsafe_allow_html=True)
-                        st.write(f"CE: ₹{call_data['ltp']:.2f}")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                
-                with col3:
-                    if call_data:
-                        change_color = "market-up" if call_data['change'] > 0 else "market-down"
-                        st.markdown(f'<span class="{change_color}">{call_data["change"]:+.1f}</span>', unsafe_allow_html=True)
-                
-                # Put Option
-                with col4:
-                    if put_data:
-                        st.markdown(f'<div class="put-option">', unsafe_allow_html=True)
-                        st.write(f"PE: ₹{put_data['ltp']:.2f}")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                
-                with col5:
-                    if put_data:
-                        change_color = "market-up" if put_data['change'] > 0 else "market-down"
-                        st.markdown(f'<span class="{change_color}">{put_data["change"]:+.1f}</span>', unsafe_allow_html=True)
 
 # ----------- LIVE INTRADAY SIGNALS TAB ----------- #
 else:
@@ -793,49 +733,17 @@ else:
         
         if "BULLISH" in live_signal:
             st.markdown(f'<div class="signal-buy">{live_signal}</div>', unsafe_allow_html=True)
-            st.success("""
-            **Live Recommendation:** 
-            - Consider long positions
-            - Buy Call options for leverage
-            - Target immediate resistance levels
-            - Use tight stop loss below support
-            """)
         elif "BEARISH" in live_signal:
             st.markdown(f'<div class="signal-sell">{live_signal}</div>', unsafe_allow_html=True)
-            st.warning("""
-            **Live Recommendation:**
-            - Consider short positions  
-            - Buy Put options for leverage
-            - Target immediate support levels
-            - Use tight stop loss above resistance
-            """)
         else:
             st.markdown(f'<div class="signal-wait">{live_signal}</div>', unsafe_allow_html=True)
-            st.info("""
-            **Live Recommendation:**
-            - Wait for clearer direction
-            - Monitor key breakout levels
-            - Consider smaller positions
-            - Watch for volume confirmation
-            """)
-        
-        # Live Market Context
-        st.subheader("📊 Live Market Context")
-        
-        live_data = get_live_price(selected_symbol)
-        if live_data:
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Current Price", f"₹{live_data['current']:.2f}")
-            col2.metric("Today's Change", f"{live_data['change']:.2f}%")
-            col3.metric("Day High", f"₹{live_data['high']:.2f}")
-            col4.metric("Day Low", f"₹{live_data['low']:.2f}")
 
-# Professional Footer with refresh info
+# Professional Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
     <p><strong>GannXPro — Live Market Intelligence Platform</strong></p>
     <p>📚 Educational Purpose Only | 🔒 Privacy First | ⚡ Real-time Live Data</p>
-    <p>Auto-refreshing every 30 seconds | For analysis and learning. Not investment advice.</p>
+    <p>Click Refresh button for latest data | For analysis and learning. Not investment advice.</p>
 </div>
 """, unsafe_allow_html=True)
