@@ -1,4 +1,4 @@
-# app.py - PROFESSIONAL GannXPro WITH GANN FEATURES
+# app.py - GannXPro with Working Phase 1 Features
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -93,247 +93,306 @@ st.markdown("""
         margin: 0.2rem 0;
         border-radius: 5px;
     }
+    .market-up {
+        color: #28a745;
+        font-weight: bold;
+    }
+    .market-down {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    .info-box {
+        background-color: #e7f3ff;
+        border-left: 4px solid #1f77b4;
+        padding: 1rem;
+        border-radius: 5px;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Professional Header
 st.markdown('<div class="main-header">📈 GannXPro</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">AI-Powered Market Intelligence with Gann Analysis</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">AI-Powered Market Intelligence Platform</div>', unsafe_allow_html=True)
 
 # ----------- BASIC CONFIG ----------- #
 HISTORY_YEARS = 2
 SHORT_SMA = 20
 LONG_SMA = 50
 
-NSE_BASE = "https://www.nseindia.com"
-SESSION = requests.Session()
-SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-})
+# ----------- FIXED: SIMPLIFIED NSE API CALLS ----------- #
+def safe_nse_api_call(symbol, is_index=True):
+    """Safe API call with error handling"""
+    try:
+        if is_index:
+            url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
+        else:
+            url = f"https://www.nseindia.com/api/option-chain-equities?symbol={symbol}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        return None
 
-# ----------- GANN ANALYSIS FUNCTIONS ----------- #
+# ----------- PHASE 1: NEW TECHNICAL INDICATORS ----------- #
+def calculate_rsi(df, period=14):
+    """Calculate Relative Strength Index (RSI)"""
+    try:
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    except:
+        return pd.Series([50] * len(df))  # Return neutral RSI if error
+
+def calculate_macd(df, fast=12, slow=26, signal=9):
+    """Calculate MACD (Moving Average Convergence Divergence)"""
+    try:
+        ema_fast = df['Close'].ewm(span=fast, adjust=False).mean()
+        ema_slow = df['Close'].ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        histogram = macd_line - signal_line
+        return macd_line, signal_line, histogram
+    except:
+        # Return zeros if error
+        zeros = pd.Series([0] * len(df))
+        return zeros, zeros, zeros
+
+def calculate_bollinger_bands(df, period=20, std_dev=2):
+    """Calculate Bollinger Bands"""
+    try:
+        sma = df['Close'].rolling(window=period).mean()
+        std = df['Close'].rolling(window=period).std()
+        upper_band = sma + (std * std_dev)
+        lower_band = sma - (std * std_dev)
+        return upper_band, sma, lower_band
+    except:
+        # Return simple values if error
+        close = df['Close']
+        return close, close, close
+
+def get_technical_indicators(df):
+    """Calculate all technical indicators with error handling"""
+    try:
+        # RSI
+        df['RSI'] = calculate_rsi(df)
+        
+        # MACD
+        df['MACD'], df['MACD_Signal'], df['MACD_Histogram'] = calculate_macd(df)
+        
+        # Bollinger Bands
+        df['BB_Upper'], df['BB_Middle'], df['BB_Lower'] = calculate_bollinger_bands(df)
+        
+        # Moving Averages
+        df['SMA_20'] = df['Close'].rolling(window=20).mean()
+        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+        df['EMA_12'] = df['Close'].ewm(span=12).mean()
+        df['EMA_26'] = df['Close'].ewm(span=26).mean()
+        
+        return df
+    except Exception as e:
+        st.error(f"Technical indicators error: {e}")
+        return df
+
+# ----------- PHASE 1: MARKET DASHBOARD ----------- #
+def get_nifty_components():
+    """Get Nifty 50 components with current prices - SIMPLIFIED"""
+    # Limited set of reliable stocks
+    reliable_stocks = {
+        'RELIANCE.NS': 'Reliance',
+        'TCS.NS': 'TCS', 
+        'INFY.NS': 'Infosys',
+        'HDFCBANK.NS': 'HDFC Bank',
+        'ICICIBANK.NS': 'ICICI Bank',
+        'BHARTIARTL.NS': 'Airtel',
+        'ITC.NS': 'ITC',
+        'KOTAKBANK.NS': 'Kotak Bank',
+        'LT.NS': 'L&T',
+        'SBIN.NS': 'SBI'
+    }
+    
+    market_data = []
+    for symbol, name in reliable_stocks.items():
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period='2d')  # 2 days to calculate change
+            if len(hist) >= 2:
+                current = hist['Close'].iloc[-1]
+                prev_close = hist['Close'].iloc[-2]
+                change = ((current - prev_close) / prev_close) * 100
+                volume = hist['Volume'].iloc[-1]
+                
+                market_data.append({
+                    'Symbol': symbol.replace('.NS', ''),
+                    'Name': name,
+                    'Price': current,
+                    'Change': change,
+                    'Volume': volume
+                })
+        except Exception as e:
+            continue
+    
+    return pd.DataFrame(market_data)
+
+def get_sector_performance():
+    """Get sector-wise performance - SIMPLIFIED"""
+    sectors = {
+        '^NSEI': 'Nifty 50',
+        '^NSEBANK': 'Bank Nifty', 
+        '^CNXIT': 'Nifty IT',
+        '^CNXAUTO': 'Nifty Auto'
+    }
+    
+    sector_data = []
+    for symbol, name in sectors.items():
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period='2d')
+            if len(hist) >= 2:
+                current = hist['Close'].iloc[-1]
+                prev_close = hist['Close'].iloc[-2]
+                change = ((current - prev_close) / prev_close) * 100
+                
+                sector_data.append({
+                    'Sector': name,
+                    'Change': change
+                })
+        except:
+            continue
+    
+    return pd.DataFrame(sector_data)
+
+# ----------- PHASE 1: EDUCATIONAL CONTENT ----------- #
+def show_educational_tooltip(term):
+    """Show educational information for technical terms"""
+    educational_content = {
+        'rsi': {
+            'title': 'RSI (Relative Strength Index)',
+            'description': 'Measures speed and change of price movements. Range: 0-100',
+            'interpretation': '>70: Overbought, <30: Oversold, 50: Neutral'
+        },
+        'macd': {
+            'title': 'MACD (Moving Average Convergence Divergence)',
+            'description': 'Trend-following momentum indicator',
+            'interpretation': 'MACD > Signal: Bullish, MACD < Signal: Bearish'
+        },
+        'bollinger': {
+            'title': 'Bollinger Bands',
+            'description': 'Volatility bands placed above and below moving average',
+            'interpretation': 'Price near upper band: Overbought, near lower band: Oversold'
+        },
+        'pcr': {
+            'title': 'Put-Call Ratio (PCR)',
+            'description': 'Ratio of put volume to call volume',
+            'interpretation': '>1: Bearish sentiment, <1: Bullish sentiment'
+        },
+        'vwap': {
+            'title': 'VWAP (Volume Weighted Average Price)',
+            'description': 'Average price weighted by volume',
+            'interpretation': 'Price > VWAP: Bullish, Price < VWAP: Bearish'
+        },
+        'gann': {
+            'title': 'Gann Analysis',
+            'description': 'Technical analysis method using geometry and time cycles',
+            'interpretation': 'Based on W.D. Gann theories of price and time relationships'
+        }
+    }
+    
+    content = educational_content.get(term, {})
+    with st.expander(f"📚 {content.get('title', term)}"):
+        st.write(f"**Description:** {content.get('description', '')}")
+        st.write(f"**Interpretation:** {content.get('interpretation', '')}")
+
+# ----------- SIMPLIFIED GANN ANALYSIS ----------- #
 def calculate_gann_levels(high, low, close):
     """Calculate Gann support and resistance levels"""
-    pivot = (high + low + close) / 3
-    r1 = (2 * pivot) - low
-    s1 = (2 * pivot) - high
-    r2 = pivot + (high - low)
-    s2 = pivot - (high - low)
-    r3 = high + 2 * (pivot - low)
-    s3 = low - 2 * (high - pivot)
-    
-    return {
-        'pivot': pivot,
-        'resistance': [r1, r2, r3],
-        'support': [s1, s2, s3]
-    }
-
-def calculate_gann_angles(price, time_units=1):
-    """Calculate Gann angles (1x1, 2x1, 1x2, etc.)"""
-    angles = {
-        '1x1': price * (1 + 1/8 * time_units/100),  # 45 degrees
-        '2x1': price * (1 + 1/4 * time_units/100),  # 63.75 degrees
-        '1x2': price * (1 + 1/16 * time_units/100), # 26.25 degrees
-        '3x1': price * (1 + 3/8 * time_units/100),  # 71.25 degrees
-        '1x3': price * (1 + 1/24 * time_units/100), # 18.75 degrees
-    }
-    return angles
-
-def gann_square_of_nine(price):
-    """Calculate Gann Square of Nine levels"""
-    sqrt_price = math.sqrt(price)
-    levels = []
-    
-    for i in range(-4, 5):
-        level = (sqrt_price + i/2) ** 2
-        levels.append(level)
-    
-    return sorted(levels)
-
-def gann_time_cycles(current_date=None):
-    """Calculate Gann time cycles and important dates"""
-    if current_date is None:
-        current_date = datetime.now()
-    
-    cycles = {
-        'daily_important_times': [
-            "09:15 - Market Open (Key Direction)",
-            "10:00 - First Gann Time Window",
-            "11:30 - Mid-day Reversal Point", 
-            "13:30 - Major Gann Time Window",
-            "14:45 - Late Day Movement",
-            "15:15 - Last 15min (Settlement)"
-        ],
-        'weekly_cycles': [
-            "Monday - Trend Setter Day",
-            "Tuesday - Confirmation Day", 
-            "Wednesday - Mid-week Reversal",
-            "Thursday - Pre-Friday Movement",
-            "Friday - Settlement & Close"
-        ],
-        'monthly_cycles': [
-            "1st-7th: New Month Energy",
-            "8th-15th: Mid-month Consolidation",
-            "16th-23rd: Trend Continuation",
-            "24th-EOM: Final Week Volatility"
-        ]
-    }
-    return cycles
+    try:
+        pivot = (high + low + close) / 3
+        r1 = (2 * pivot) - low
+        s1 = (2 * pivot) - high
+        r2 = pivot + (high - low)
+        s2 = pivot - (high - low)
+        
+        return {
+            'pivot': pivot,
+            'resistance': [r1, r2],
+            'support': [s1, s2]
+        }
+    except:
+        return {'pivot': close, 'resistance': [close, close], 'support': [close, close]}
 
 def gann_trading_signal(price_data, current_price):
     """Generate Gann-based trading signals"""
-    if len(price_data) < 20:
-        return "Insufficient data for Gann analysis"
-    
-    high_20 = max(price_data[-20:])
-    low_20 = min(price_data[-20:])
-    close = current_price
-    
-    gann_levels = calculate_gann_levels(high_20, low_20, close)
-    
-    # Check current price against Gann levels
-    support_levels = gann_levels['support']
-    resistance_levels = gann_levels['resistance']
-    
-    if close >= resistance_levels[0]:
-        return "🟢 STRONG BULLISH - Above R1"
-    elif close <= support_levels[0]:
-        return "🔴 STRONG BEARISH - Below S1" 
-    elif close > gann_levels['pivot']:
-        return "🟡 MILD BULLISH - Above Pivot"
-    elif close < gann_levels['pivot']:
-        return "🟡 MILD BEARISH - Below Pivot"
-    else:
-        return "⚪ NEUTRAL - At Pivot Point"
-
-def calculate_gann_fan_levels(high, low, close):
-    """Calculate Gann Fan levels for trend analysis"""
-    price_range = high - low
-    fan_levels = {
-        'bullish_fan': [
-            close + price_range * 0.125,  # 1/8
-            close + price_range * 0.25,   # 1/4
-            close + price_range * 0.375,  # 3/8
-            close + price_range * 0.5,    # 1/2
-            close + price_range * 0.625,  # 5/8
-            close + price_range * 0.75,   # 3/4
-            close + price_range * 0.875   # 7/8
-        ],
-        'bearish_fan': [
-            close - price_range * 0.125,  # 1/8
-            close - price_range * 0.25,   # 1/4
-            close - price_range * 0.375,  # 3/8
-            close - price_range * 0.5,    # 1/2
-            close - price_range * 0.625,  # 5/8
-            close - price_range * 0.75,   # 3/4
-            close - price_range * 0.875   # 7/8
-        ]
-    }
-    return fan_levels
-
-# ----------- NSE OPTION CHAIN HELPERS ----------- #
-def nse_get(path: str, params=None, retries: int = 3, backoff: float = 1.0):
-    """Call NSE endpoint with caching."""
-    url = NSE_BASE + path
-    cache_key = f"{url}::{json.dumps(params, sort_keys=True) if params else ''}"
-
-    if not hasattr(nse_get, "_cache"):
-        nse_get._cache = {}
-    cache = nse_get._cache
-
-    if cache_key in cache:
-        data, ts = cache[cache_key]
-        if time.time() - ts < 60:
-            return data
-
-    for i in range(retries):
-        try:
-            r = SESSION.get(url, params=params, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                cache[cache_key] = (data, time.time())
-                return data
-            time.sleep(backoff * (i + 1))
-        except Exception:
-            time.sleep(backoff * (i + 1))
-
-    raise RuntimeError(f"NSE GET failed for {path}")
-
-def fetch_option_chain_nse_index(symbol: str):
-    path = f"/api/option-chain-indices?symbol={symbol}"
-    return nse_get(path)
-
-def fetch_option_chain_nse_stock(symbol: str):
-    path = f"/api/option-chain-equities?symbol={symbol}"
-    return nse_get(path)
-
-def parse_option_chain_response(resp):
-    """Convert NSE JSON into compact dict."""
-    result = {"expiries": {}, "underlying": None, "lastUpdated": None}
-    records = resp.get("records") or resp
-
     try:
-        underlying = (
-            records.get("underlyingValue")
-            or records.get("underlyingVal")
-            or records.get("underlying")
-        )
-        result["underlying"] = underlying
-    except Exception:
-        result["underlying"] = None
+        if len(price_data) < 5:
+            return "Insufficient data"
+        
+        high_10 = max(price_data[-10:])
+        low_10 = min(price_data[-10:])
+        
+        gann_levels = calculate_gann_levels(high_10, low_10, current_price)
+        
+        if current_price >= gann_levels['resistance'][0]:
+            return "🟢 BULLISH - Above R1"
+        elif current_price <= gann_levels['support'][0]:
+            return "🔴 BEARISH - Below S1" 
+        elif current_price > gann_levels['pivot']:
+            return "🟡 MILD BULLISH - Above Pivot"
+        else:
+            return "🟡 MILD BEARISH - Below Pivot"
+    except:
+        return "⚪ NEUTRAL - Analysis unavailable"
 
-    if "data" in records:
-        rows = records["data"]
-    else:
-        rows = records.get("records", {}).get("data", [])
-
-    result["lastUpdated"] = records.get("timestamp") or records.get("records", {}).get("timestamp")
-
-    for r in rows:
-        exp = r.get("expiryDate") or r.get("expiry") or "UNKNOWN"
-        if exp not in result["expiries"]:
-            result["expiries"][exp] = []
-        result["expiries"][exp].append(r)
-    return result
-
-def compute_pcr_by_oi(oc, expiry: str) -> float:
-    rows = oc["expiries"].get(expiry, [])
-    if not rows:
-        return float("nan")
-    call_oi, put_oi = 0.0, 0.0
-    for r in rows:
-        ce = r.get("CE") or r.get("call")
-        pe = r.get("PE") or r.get("put")
-        if ce and isinstance(ce, dict):
-            call_oi += float(ce.get("openInterest") or 0)
-        if pe and isinstance(pe, dict):
-            put_oi += float(pe.get("openInterest") or 0)
-    return (put_oi / call_oi) if call_oi > 0 else float("nan")
-
-def compute_max_pain(oc, expiry: str) -> float:
-    rows = oc["expiries"].get(expiry, [])
-    if not rows:
-        return float("nan")
-    strikes = sorted({
-        r.get("strikePrice") or r.get("strike")
-        for r in rows
-        if r.get("strikePrice") or r.get("strike")
-    })
-    candidate_scores = {}
-    for s in strikes:
-        total = 0.0
-        for r in rows:
-            strike = r.get("strikePrice") or r.get("strike")
-            ce = r.get("CE") or r.get("call")
-            pe = r.get("PE") or r.get("put")
-            oi_call = float(ce.get("openInterest") or 0) if ce else 0.0
-            oi_put = float(pe.get("openInterest") or 0) if pe else 0.0
-            total += abs(strike - s) * (oi_call + oi_put)
-        candidate_scores[s] = total
-    if not candidate_scores:
-        return float("nan")
-    return min(candidate_scores.items(), key=lambda x: x[1])[0]
+# ----------- SIMPLIFIED OPTION CHAIN ----------- #
+def get_option_chain_data(symbol):
+    """Get basic option chain data with fallback"""
+    try:
+        data = safe_nse_api_call(symbol, True)
+        if data and 'records' in data:
+            underlying = data['records'].get('underlyingValue', 0)
+            timestamp = data['records'].get('timestamp', 'N/A')
+            
+            # Simple PCR calculation
+            total_ce_oi = 0
+            total_pe_oi = 0
+            
+            if 'data' in data['records']:
+                for item in data['records']['data']:
+                    if 'CE' in item and item['CE']:
+                        total_ce_oi += item['CE'].get('openInterest', 0)
+                    if 'PE' in item and item['PE']:
+                        total_pe_oi += item['PE'].get('openInterest', 0)
+            
+            pcr = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0
+            
+            return {
+                'underlying': underlying,
+                'timestamp': timestamp,
+                'pcr': pcr,
+                'success': True
+            }
+    except:
+        pass
+    
+    # Fallback data
+    return {
+        'underlying': 0,
+        'timestamp': 'N/A',
+        'pcr': 0,
+        'success': False
+    }
 
 # ----------- PRICE / HISTORY HELPERS ----------- #
 def normalize_ticker_yf(t: str) -> str:
@@ -346,671 +405,365 @@ def normalize_ticker_yf(t: str) -> str:
         t = t + ".NS"
     return t
 
-def fetch_history(ticker: str, years: int = HISTORY_YEARS):
-    tk = normalize_ticker_yf(ticker)
-    df = yf.Ticker(tk).history(period=f"{int(years * 365)}d", auto_adjust=False)
-    if df.empty:
-        raise RuntimeError("No history from yfinance")
-    df.index = pd.to_datetime(df.index).normalize()
-    return df
-
-def detect_candle_patterns(df: pd.DataFrame):
-    out = []
-    if len(df) < 3:
-        return out
-    last = df.tail(3)
-    c, o, h, l = (
-        last["Close"].iloc[-1],
-        last["Open"].iloc[-1],
-        last["High"].iloc[-1],
-        last["Low"].iloc[-1],
-    )
-    body = abs(c - o)
-    rng = h - l
-    if rng > 0 and (body / rng) < 0.12:
-        out.append("Doji")
-    if min(o, c) - l > 2 * body:
-        out.append("Hammer")
-    a = last.iloc[-2]
-    b = last.iloc[-1]
-    if (
-        (a["Close"] < a["Open"])
-        and (b["Close"] > b["Open"])
-        and ((b["Close"] - b["Open"]) > (a["Open"] - a["Close"]))
-    ):
-        out.append("Bullish Engulfing")
-    return out
-
-def suggest_strikes(price: float, ticker: str):
-    raw = ticker.upper()
-    step = 0.005 if "NIFTY" in raw else 0.02
-    out = [f"ATM ~ {round(price, 2)}"]
-    for k in (1, 2):
-        out.append(f"+{k} OTM ~ {round(price * (1 + step * k), 2)}")
-    return out
-
-def enriched_option_buyer_score(ticker: str, oc_parsed, expiry: str | None):
-    """Combine trend + patterns + volume + chain into score 0–100."""
-    out = {"ticker": ticker, "score": 0, "components": {}, "expiry": expiry}
+def fetch_history(ticker: str, months: int = 6):
+    """Fetch historical data with error handling"""
     try:
-        df = fetch_history(ticker)
+        tk = normalize_ticker_yf(ticker)
+        df = yf.Ticker(tk).history(period=f"{months}mo")
+        if df.empty:
+            # Fallback to 1 month if empty
+            df = yf.Ticker(tk).history(period="1mo")
+        return df
     except Exception as e:
-        out["error"] = f"no-data:{e}"
-        return out
+        st.error(f"Error fetching data for {ticker}: {e}")
+        return pd.DataFrame()
 
-    # Trend
-    try:
-        s_short = df["Close"].rolling(window=SHORT_SMA).mean().iloc[-1]
-        s_long = df["Close"].rolling(window=LONG_SMA).mean().iloc[-1]
-        trend_comp = 25 if s_short > s_long else (10 if s_short == s_long else 0)
-    except Exception:
-        trend_comp = 10
-
-    # Candle patterns
-    pats = detect_candle_patterns(df)
-    pat_comp = 12 if "Bullish Engulfing" in pats else (8 if "Hammer" in pats else 0)
-
-    # Volume
-    vol_ratio = (
-        df["Volume"].iloc[-1] / max(1.0, df["Volume"].tail(50).mean())
-        if "Volume" in df.columns
-        else 1.0
-    )
-    vol_comp = min(15, int((vol_ratio - 1.0) * 10)) if vol_ratio > 1.0 else 0
-
-    # Chain
-    chain_comp = 0
-    pcr = None
-    maxpain = None
-    avg_iv = None
-
-    if oc_parsed and expiry:
-        try:
-            pcr = compute_pcr_by_oi(oc_parsed, expiry)
-            if not math.isnan(pcr):
-                pcr_clamped = min(max(pcr, 0.1), 5.0)
-                chain_comp += int((1 - min(pcr_clamped / 5.0, 1.0)) * 20)
-            maxpain = compute_max_pain(oc_parsed, expiry)
-            rows = oc_parsed["expiries"].get(expiry, [])
-            ivs = []
-            for r in rows:
-                ce = r.get("CE") or r.get("call")
-                pe = r.get("PE") or r.get("put")
-                if ce and isinstance(ce, dict):
-                    v = ce.get("impliedVolatility") or ce.get("iv")
-                    if v:
-                        ivs.append(float(v))
-                if pe and isinstance(pe, dict):
-                    v = pe.get("impliedVolatility") or pe.get("iv")
-                    if v:
-                        ivs.append(float(v))
-            if ivs:
-                avg_iv = float(np.nanmean(ivs))
-                iv_score = int((1 - min(avg_iv / 100.0, 1.0)) * 20)
-                chain_comp += iv_score
-        except Exception:
-            pass
-
-    total = trend_comp + pat_comp + vol_comp + chain_comp
-    out["score"] = min(100, int(total))
-    out["components"] = {
-        "trend": trend_comp,
-        "pattern": pat_comp,
-        "vol": vol_comp,
-        "chain": chain_comp,
-        "pcr": pcr,
-        "maxpain": maxpain,
-        "avg_iv": avg_iv,
-    }
-    try:
-        cur = float(df["Close"].iloc[-1])
-        out["suggested_strikes"] = suggest_strikes(cur, ticker)
-    except Exception:
-        out["suggested_strikes"] = []
-    return out
-
-# ----------- INTRADAY HELPERS ----------- #
 def fetch_intraday(ticker: str, period: str = "5d", interval: str = "5m"):
-    tk = normalize_ticker_yf(ticker)
-    df = yf.Ticker(tk).history(period=period, interval=interval)
-    if df.empty:
-        raise RuntimeError("No intraday data")
-    return df
+    """Fetch intraday data with error handling"""
+    try:
+        tk = normalize_ticker_yf(ticker)
+        df = yf.Ticker(tk).history(period=period, interval=interval)
+        if df.empty:
+            raise RuntimeError("No intraday data")
+        return df
+    except Exception as e:
+        st.error(f"Intraday data error: {e}")
+        return pd.DataFrame()
 
 def add_vwap_and_ema(df: pd.DataFrame):
-    tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    df["VWAP"] = (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
-    df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
-    df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
-    return df
-
-def option_bias_from_intraday(df: pd.DataFrame) -> str:
-    last = df.iloc[-1]
-    price = last["Close"]
-    vwap = last["VWAP"]
-    ema9 = last["EMA9"]
-    ema21 = last["EMA21"]
-
-    up_trend = (price > vwap) and (ema9 > ema21)
-    down_trend = (price < vwap) and (ema9 < ema21)
-
-    if up_trend:
-        return "BUY CE (Bullish intraday bias)"
-    elif down_trend:
-        return "BUY PE (Bearish intraday bias)"
-    return "WAIT / NO CLEAR EDGE"
-
-# ----------- BLACK–SCHOLES GREEKS ----------- #
-def bs_price(S, K, T, r, sigma, option_type="call"):
-    if T <= 0 or sigma <= 0:
-        return max(0.0, (S - K) if option_type == "call" else (K - S))
-    d1 = (log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt(T))
-    d2 = d1 - sigma * sqrt(T)
-    if option_type == "call":
-        return S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
-    else:
-        return K * exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-
-def bs_greeks(S, K, T, r, sigma, option_type="call"):
-    if T <= 0 or sigma <= 0:
-        return {"delta": 0, "theta": 0, "vega": 0}
-    d1 = (log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt(T))
-    d2 = d1 - sigma * sqrt(T)
-    delta = norm.cdf(d1) if option_type == "call" else (norm.cdf(d1) - 1)
-    vega = S * norm.pdf(d1) * sqrt(T)
-    theta = -(
-        S * norm.pdf(d1) * sigma
-    ) / (2 * sqrt(T)) - r * K * exp(-r * T) * (
-        norm.cdf(d2) if option_type == "call" else -norm.cdf(-d2)
-    )
-    return {"delta": delta, "theta": theta / 365.0, "vega": vega / 100.0}
+    """Add VWAP and EMA with error handling"""
+    try:
+        if df.empty:
+            return df
+            
+        tp = (df["High"] + df["Low"] + df["Close"]) / 3
+        df["VWAP"] = (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
+        df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
+        df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
+        return df
+    except:
+        return df
 
 # ----------- STREAMLIT UI ----------- #
 st.sidebar.header("🔧 Navigation")
 app_mode = st.sidebar.radio(
     "Choose Analysis Mode",
-    ["Gann Analysis", "Option Chain Pro", "Intraday Pro", "Signals & Greeks"],
+    ["Market Dashboard", "Technical Analysis", "Option Chain", "Intraday Signals"],
     index=0
 )
 
 # Sidebar Info
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 Quick Stats")
+st.sidebar.markdown("### 💡 Tips")
 st.sidebar.info("""
-**Live Features:**
-- Gann Technical Analysis
-- Real-time Option Chains
-- Intraday Analysis  
-- Trading Signals
-- Greeks Calculator
+- **Market Hours:** Data is most accurate during market hours (9:15 AM - 3:30 PM IST)
+- **Reliable Symbols:** Use NIFTY, BANKNIFTY, RELIANCE, TCS for best results
+- **Data Source:** Yahoo Finance + NSE India
 """)
 
-# Global cache
-if 'oc_parsed_cache' not in st.session_state:
-    st.session_state.oc_parsed_cache = None
-if 'oc_symbol_cache' not in st.session_state:
-    st.session_state.oc_symbol_cache = None
-
-# Gann Analysis Tab
-if app_mode == "Gann Analysis":
-    st.markdown('<div class="section-header">🎯 Gann Technical Analysis</div>', unsafe_allow_html=True)
+# ----------- MARKET DASHBOARD TAB ----------- #
+if app_mode == "Market Dashboard":
+    st.markdown('<div class="section-header">📊 Live Market Dashboard</div>', unsafe_allow_html=True)
     
-    # Input Section
-    with st.container():
-        col1, col2, col3 = st.columns([2, 1, 1])
+    # Quick Actions
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            st.rerun()
+    
+    # Market Overview
+    st.subheader("🏦 Market Overview")
+    
+    try:
+        # Get Nifty data for overview
+        nifty = yf.Ticker("^NSEI")
+        nifty_hist = nifty.history(period="2d")
+        
+        if len(nifty_hist) >= 2:
+            nifty_current = nifty_hist['Close'].iloc[-1]
+            nifty_prev = nifty_hist['Close'].iloc[-2]
+            nifty_change = ((nifty_current - nifty_prev) / nifty_prev) * 100
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Nifty 50", f"₹{nifty_current:.2f}", f"{nifty_change:.2f}%")
+            
+            # Get Bank Nifty
+            banknifty = yf.Ticker("^NSEBANK")
+            bank_hist = banknifty.history(period="2d")
+            if len(bank_hist) >= 2:
+                bank_current = bank_hist['Close'].iloc[-1]
+                bank_prev = bank_hist['Close'].iloc[-2]
+                bank_change = ((bank_current - bank_prev) / bank_prev) * 100
+                col2.metric("Bank Nifty", f"₹{bank_current:.2f}", f"{bank_change:.2f}%")
+    except:
+        st.warning("Market data temporarily unavailable")
+    
+    # Stock Performance
+    st.subheader("📈 Stock Performance")
+    
+    with st.spinner("Loading stock data..."):
+        market_data = get_nifty_components()
+    
+    if not market_data.empty:
+        # Top Performers
+        col1, col2 = st.columns(2)
         
         with col1:
-            ticker = st.text_input("**Ticker Symbol**", "NIFTY", key="gann_ticker")
+            st.markdown("**Top Gainers**")
+            gainers = market_data.nlargest(5, 'Change')
+            for _, stock in gainers.iterrows():
+                emoji = "📈" if stock['Change'] > 0 else "📉"
+                st.write(f"{emoji} **{stock['Symbol']}**: ₹{stock['Price']:.2f} ({stock['Change']:+.2f}%)")
         
         with col2:
-            period = st.selectbox("**Period**", ["1mo", "3mo", "6mo", "1y"], index=2)
+            st.markdown("**Top Losers**")
+            losers = market_data.nsmallest(5, 'Change')
+            for _, stock in losers.iterrows():
+                emoji = "📈" if stock['Change'] > 0 else "📉"
+                st.write(f"{emoji} **{stock['Symbol']}**: ₹{stock['Price']:.2f} ({stock['Change']:+.2f}%)")
         
-        with col3:
-            st.write("")
-            st.write("")
-            if st.button("🧮 Analyze with Gann", type="primary", use_container_width=True):
-                with st.spinner("Performing Gann analysis..."):
-                    try:
-                        df = fetch_history(ticker, 1)  # 1 year data for Gann
-                        current_price = df['Close'].iloc[-1]
-                        high_52w = df['High'].max()
-                        low_52w = df['Low'].min()
+        # Sector Performance
+        st.subheader("🏭 Sector Performance")
+        sector_data = get_sector_performance()
+        
+        if not sector_data.empty:
+            cols = st.columns(len(sector_data))
+            for idx, (_, sector) in enumerate(sector_data.iterrows()):
+                with cols[idx]:
+                    delta_color = "normal" if sector['Change'] >= 0 else "inverse"
+                    st.metric(
+                        sector['Sector'],
+                        f"{sector['Change']:.2f}%",
+                        delta_color=delta_color
+                    )
+
+# ----------- TECHNICAL ANALYSIS TAB ----------- #
+elif app_mode == "Technical Analysis":
+    st.markdown('<div class="section-header">🔍 Technical Analysis</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        symbol = st.text_input("Enter Symbol:", "NIFTY")
+        period = st.selectbox("Time Period:", ["1mo", "3mo", "6mo", "1y"], index=2)
+    
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("Analyze", type="primary", use_container_width=True):
+            with st.spinner("Performing technical analysis..."):
+                try:
+                    # Convert period to months for history
+                    months_map = {"1mo": 1, "3mo": 3, "6mo": 6, "1y": 12}
+                    df = fetch_history(symbol, months_map[period])
+                    
+                    if not df.empty:
+                        df = get_technical_indicators(df)
+                        last_row = df.iloc[-1]
                         
-                        # Calculate Gann levels
-                        gann_levels = calculate_gann_levels(high_52w, low_52w, current_price)
-                        gann_angles = calculate_gann_angles(current_price)
-                        square_of_nine = gann_square_of_nine(current_price)
-                        gann_fan = calculate_gann_fan_levels(high_52w, low_52w, current_price)
-                        gann_signal = gann_trading_signal(df['Close'].tolist(), current_price)
-                        time_cycles = gann_time_cycles()
-                        
-                        st.session_state.gann_data = {
-                            'current_price': current_price,
-                            'gann_levels': gann_levels,
-                            'gann_angles': gann_angles,
-                            'square_of_nine': square_of_nine,
-                            'gann_fan': gann_fan,
-                            'gann_signal': gann_signal,
-                            'time_cycles': time_cycles,
-                            'high_52w': high_52w,
-                            'low_52w': low_52w
+                        st.session_state.tech_data = {
+                            'symbol': symbol,
+                            'data': df,
+                            'last_row': last_row,
+                            'success': True
                         }
+                    else:
+                        st.session_state.tech_data = {'success': False}
                         
-                    except Exception as e:
-                        st.error(f"❌ Gann analysis error: {e}")
-
-    # Display Gann Analysis Results
-    if 'gann_data' in st.session_state:
-        data = st.session_state.gann_data
-        
-        st.success("✅ Gann analysis completed successfully!")
-        
-        # Current Price and Signal
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("**Current Price**", f"₹{data['current_price']:.2f}")
-        with col2:
-            st.metric("**52W High**", f"₹{data['high_52w']:.2f}")
-        with col3:
-            st.metric("**52W Low**", f"₹{data['low_52w']:.2f}")
-
-        # Gann Trading Signal
-        st.markdown("#### 🎯 Gann Trading Signal")
-        signal = data['gann_signal']
-        if "BULLISH" in signal:
-            st.markdown(f'<div class="signal-buy">🟢 {signal}</div>', unsafe_allow_html=True)
-        elif "BEARISH" in signal:
-            st.markdown(f'<div class="signal-sell">🔴 {signal}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="signal-wait">🟡 {signal}</div>', unsafe_allow_html=True)
-
-        # Gann Support & Resistance Levels
-        st.markdown("#### 📊 Gann Support & Resistance Levels")
-        gann_levels = data['gann_levels']
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("##### 🔴 Resistance Levels")
-            for i, level in enumerate(gann_levels['resistance']):
-                st.markdown(f'<div class="gann-level-up">R{i+1}: ₹{level:.2f}</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("##### ⚪ Pivot Point")
-            st.markdown(f'<div class="gann-level-neutral">Pivot: ₹{gann_levels["pivot"]:.2f}</div>', unsafe_allow_html=True)
-            st.metric("Current vs Pivot", 
-                     f"₹{data['current_price']:.2f}",
-                     delta=f"₹{data['current_price'] - gann_levels['pivot']:.2f}")
-        
-        with col3:
-            st.markdown("##### 🟢 Support Levels")
-            for i, level in enumerate(gann_levels['support']):
-                st.markdown(f'<div class="gann-level-down">S{i+1}: ₹{level:.2f}</div>', unsafe_allow_html=True)
-
-        # Gann Angles and Square of Nine
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### 📐 Gann Angles")
-            angles = data['gann_angles']
-            for angle, value in angles.items():
-                st.metric(f"**{angle} Angle**", f"₹{value:.2f}")
-
-        with col2:
-            st.markdown("#### 9️⃣ Square of Nine Levels")
-            so9 = data['square_of_nine']
-            for i, level in enumerate(so9[3:6]):  # Show middle 3 levels
-                diff = level - data['current_price']
-                st.metric(f"Level {i+2}", f"₹{level:.2f}", delta=f"₹{diff:.2f}")
-
-        # Gann Time Cycles
-        st.markdown("#### ⏰ Gann Time Cycles")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("##### 📅 Daily Cycles")
-            for cycle in data['time_cycles']['daily_important_times']:
-                st.write(f"• {cycle}")
-        
-        with col2:
-            st.markdown("##### 📆 Weekly Cycles")
-            for cycle in data['time_cycles']['weekly_cycles']:
-                st.write(f"• {cycle}")
-        
-        with col3:
-            st.markdown("##### 📊 Monthly Cycles")
-            for cycle in data['time_cycles']['monthly_cycles']:
-                st.write(f"• {cycle}")
-
-        # Gann Fan Levels
-        st.markdown("#### 🌀 Gann Fan Levels")
-        fan_levels = data['gann_fan']
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("##### 🟢 Bullish Fan Levels")
-            for i, level in enumerate(fan_levels['bullish_fan']):
-                st.metric(f"B{i+1}", f"₹{level:.2f}")
-        
-        with col2:
-            st.markdown("##### 🔴 Bearish Fan Levels")
-            for i, level in enumerate(fan_levels['bearish_fan']):
-                st.metric(f"S{i+1}", f"₹{level:.2f}")
-
-# Rest of the code remains the same for other tabs...
-# [Option Chain Pro, Intraday Pro, Signals & Greeks tabs remain unchanged from previous version]
-
-# For brevity, I'll keep the other tabs as they were in the previous version
-# Option Chain Pro Tab
-elif app_mode == "Option Chain Pro":
-    st.markdown('<div class="section-header">🔗 Option Chain Pro</div>', unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"Analysis error: {e}")
+                    st.session_state.tech_data = {'success': False}
     
-    # Input Section
-    with st.container():
-        col1, col2, col3 = st.columns([2, 1, 1])
+    # Display Technical Analysis Results
+    if 'tech_data' in st.session_state and st.session_state.tech_data['success']:
+        data = st.session_state.tech_data
+        last = data['last_row']
+        
+        st.success(f"Technical Analysis for {data['symbol']}")
+        
+        # Key Indicators
+        st.subheader("📊 Key Technical Indicators")
+        
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            ticker = st.text_input("**Ticker Symbol**", "NIFTY", key="opt_ticker", 
-                                 help="Enter NSE symbol like NIFTY, BANKNIFTY, RELIANCE")
+            # RSI
+            rsi = last['RSI']
+            rsi_status = "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral"
+            st.metric("RSI", f"{rsi:.1f}", rsi_status)
+            show_educational_tooltip('rsi')
         
         with col2:
-            option_type = st.radio("**Instrument Type**", ["Index", "Stock"], horizontal=True)
+            # MACD
+            macd = last['MACD']
+            macd_signal = last['MACD_Signal']
+            macd_status = "Bullish" if macd > macd_signal else "Bearish"
+            st.metric("MACD", f"{macd:.2f}", macd_status)
+            show_educational_tooltip('macd')
         
         with col3:
-            st.write("")  # spacer
-            st.write("")  # spacer
-            if st.button("📥 Fetch Chain", type="primary", use_container_width=True):
-                with st.spinner("Fetching option chain data..."):
-                    try:
-                        is_index = (option_type == "Index")
-                        if is_index:
-                            oc_raw = fetch_option_chain_nse_index(ticker.upper())
-                        else:
-                            oc_raw = fetch_option_chain_nse_stock(ticker.upper())
-                        
-                        oc_parsed = parse_option_chain_response(oc_raw)
-                        st.session_state.oc_parsed_cache = oc_parsed
-                        st.session_state.oc_symbol_cache = ticker.upper()
-                        
-                        st.success("✅ Option chain data fetched successfully!")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error fetching chain: {e}")
-
-    # Display Basic Info
-    if st.session_state.oc_parsed_cache:
-        oc_data = st.session_state.oc_parsed_cache
-        
-        # Key Metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("**Underlying Price**", f"₹{oc_data.get('underlying', 'N/A')}")
-        with col2:
-            st.metric("**Last Updated**", oc_data.get('lastUpdated', 'N/A')[:19] if oc_data.get('lastUpdated') else 'N/A')
-        with col3:
-            exp_count = len(oc_data["expiries"])
-            st.metric("**Available Expiries**", exp_count)
-
-        # Expiry Selection and Analysis
-        expiries = sorted(list(oc_data["expiries"].keys()))
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            selected_expiry = st.selectbox("**Select Expiry for Analysis**", expiries)
-        
-        with col2:
-            st.write("")
-            if st.button("🔍 Analyze Expiry", type="secondary", use_container_width=True):
-                with st.spinner("Analyzing expiry data..."):
-                    try:
-                        score_data = enriched_option_buyer_score(
-                            st.session_state.oc_symbol_cache, 
-                            st.session_state.oc_parsed_cache, 
-                            selected_expiry
-                        )
-                        
-                        st.session_state.score_data = score_data
-
-                    except Exception as e:
-                        st.error(f"❌ Analyze error: {e}")
-
-        # Display Analysis Results
-        if 'score_data' in st.session_state:
-            score_data = st.session_state.score_data
-            
-            st.markdown('<div class="section-header">📊 Option Buyer Analysis</div>', unsafe_allow_html=True)
-            
-            # Main Score Card
-            col1, col2, col3, col4 = st.columns(4)
-            score = score_data.get('score', 0)
-            with col1:
-                st.metric("**Overall Score**", f"{score}/100", 
-                         delta="Strong" if score > 70 else "Moderate" if score > 50 else "Weak", 
-                         delta_color="normal")
-            
-            pcr = score_data.get('components', {}).get('pcr', 0)
-            with col2:
-                if not math.isnan(pcr):
-                    st.metric("**PCR (OI)**", f"{pcr:.2f}", 
-                             delta="Bullish" if pcr < 0.7 else "Bearish" if pcr > 1.3 else "Neutral")
-            
-            maxpain = score_data.get('components', {}).get('maxpain', 0)
-            with col3:
-                if not math.isnan(maxpain):
-                    st.metric("**Max Pain**", f"₹{maxpain:,.0f}")
-            
-            avg_iv = score_data.get('components', {}).get('avg_iv', 0)
-            with col4:
-                if avg_iv:
-                    st.metric("**Avg IV**", f"{avg_iv:.1f}%")
-
-            # Component Breakdown
-            st.markdown("#### 📈 Component Breakdown")
-            comps = score_data.get('components', {})
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Trend Score", comps.get('trend', 0), "/25")
-            col2.metric("Pattern Score", comps.get('pattern', 0), "/12")
-            col3.metric("Volume Score", comps.get('vol', 0), "/15")
-            col4.metric("Chain Score", comps.get('chain', 0), "/20")
-
-            # Suggested Strikes
-            st.markdown("#### 🎯 Suggested Strikes")
-            strikes = score_data.get('suggested_strikes', [])
-            for strike in strikes:
-                st.write(f"• {strike}")
-
-# Intraday Pro Tab
-elif app_mode == "Intraday Pro":
-    st.markdown('<div class="section-header">📊 Intraday Pro</div>', unsafe_allow_html=True)
-    
-    # Input Section
-    with st.container():
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        
-        with col1:
-            ticker = st.text_input("**Ticker Symbol**", "BANKNIFTY", key="intra_ticker")
-        
-        with col2:
-            period = st.selectbox("**Period**", ["1d", "5d", "1mo"], index=1)
-        
-        with col3:
-            interval = st.selectbox("**Interval**", ["5m", "15m", "1h"], index=0)
+            # Bollinger Bands
+            price = last['Close']
+            bb_upper = last['BB_Upper']
+            bb_position = (price - last['BB_Lower']) / (bb_upper - last['BB_Lower']) * 100
+            bb_status = "High" if bb_position > 80 else "Low" if bb_position < 20 else "Mid"
+            st.metric("Bollinger Position", bb_status)
+            show_educational_tooltip('bollinger')
         
         with col4:
-            st.write("")
-            st.write("")
-            if st.button("📊 Analyze Intraday", type="primary", use_container_width=True):
-                with st.spinner("Analyzing intraday data..."):
-                    try:
-                        df_i = fetch_intraday(ticker, period=period, interval=interval)
-                        df_i = add_vwap_and_ema(df_i)
-                        bias = option_bias_from_intraday(df_i)
-                        last = df_i.iloc[-1]
-                        
-                        st.session_state.intraday_data = {
-                            'bias': bias,
-                            'last': last,
-                            'ticker': ticker
-                        }
-                        
-                    except Exception as e:
-                        st.error(f"❌ Intraday error: {e}")
-
-    # Display Results
-    if 'intraday_data' in st.session_state:
-        data = st.session_state.intraday_data
+            # Current Price
+            st.metric("Current Price", f"₹{last['Close']:.2f}")
         
-        # Key Metrics
-        st.markdown("#### 📈 Key Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("**Last Close**", f"₹{data['last']['Close']:.2f}")
-        col2.metric("**VWAP**", f"₹{data['last']['VWAP']:.2f}")
-        col3.metric("**EMA 9**", f"₹{data['last']['EMA9']:.2f}")
-        col4.metric("**EMA 21**", f"₹{data['last']['EMA21']:.2f}")
-
-        # Trading Signal
-        st.markdown("#### 🎯 Trading Signal")
-        bias = data['bias']
-        if "BUY CE" in bias:
-            st.markdown(f'<div class="signal-buy">🟢 {bias}</div>', unsafe_allow_html=True)
-            st.info("**Interpretation:** Bullish trend detected. Consider long positions or call options.")
-        elif "BUY PE" in bias:
-            st.markdown(f'<div class="signal-sell">🔴 {bias}</div>', unsafe_allow_html=True)
-            st.warning("**Interpretation:** Bearish trend detected. Consider short positions or put options.")
-        else:
-            st.markdown(f'<div class="signal-wait">🟡 {bias}</div>', unsafe_allow_html=True)
-            st.info("**Interpretation:** Market is consolidating. Wait for clearer direction.")
-
-        # Gann Timing Windows
-        st.markdown("#### ⏰ Gann Intraday Reference Windows")
-        gann_windows = [
-            "• **09:15 – 09:45** | Open drive & initial trend",
-            "• **10:00 – 10:30** | First reaction window", 
-            "• **11:15 – 11:45** | Secondary reaction phase",
-            "• **13:30 – 14:00** | Major reversal/continuation",
-            "• **14:45 – 15:15** | Late-day momentum move"
-        ]
-        for window in gann_windows:
-            st.write(window)
-
-# Signals & Greeks Tab
-else:
-    st.markdown('<div class="section-header">⚡ Signals & Greeks</div>', unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["🎯 Option Signals", "📊 Greeks Calculator"])
-    
-    with tab1:
-        st.markdown("#### Generate Option Trading Signals")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            ticker = st.text_input("**Ticker Symbol**", "NIFTY", key="sig_ticker")
-        
-        with col2:
-            st.write("")
-            st.write("")
-            if st.button("⚡ Generate Signal", type="primary", use_container_width=True):
-                with st.spinner("Generating trading signal..."):
-                    try:
-                        df_s = fetch_intraday(ticker, period="1d", interval="5m")
-                        df_s = add_vwap_and_ema(df_s)
-                        bias = option_bias_from_intraday(df_s)
-                        last = df_s.iloc[-1]
-                        
-                        st.session_state.signal_data = {
-                            'bias': bias,
-                            'last': last,
-                            'ticker': ticker
-                        }
-                        
-                    except Exception as e:
-                        st.error(f"❌ Signal error: {e}")
-
-        if 'signal_data' in st.session_state:
-            data = st.session_state.signal_data
+        # Gann Analysis
+        st.subheader("🎯 Gann Analysis")
+        try:
+            price_data = data['data']['Close'].tolist()
+            current_price = last['Close']
+            gann_signal = gann_trading_signal(price_data, current_price)
             
-            st.success("✅ Signal generated successfully!")
+            if "BULLISH" in gann_signal:
+                st.markdown(f'<div class="signal-buy">{gann_signal}</div>', unsafe_allow_html=True)
+            elif "BEARISH" in gann_signal:
+                st.markdown(f'<div class="signal-sell">{gann_signal}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="signal-wait">{gann_signal}</div>', unsafe_allow_html=True)
+                
+            show_educational_tooltip('gann')
+                
+        except Exception as e:
+            st.info("Gann analysis unavailable for this symbol")
+
+# ----------- OPTION CHAIN TAB ----------- #
+elif app_mode == "Option Chain":
+    st.markdown('<div class="section-header">🔗 Option Chain Analysis</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        symbol = st.selectbox("Select Symbol:", ["NIFTY", "BANKNIFTY"], index=0)
+    
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("Fetch Option Data", type="primary", use_container_width=True):
+            with st.spinner("Fetching option chain..."):
+                option_data = get_option_chain_data(symbol)
+                st.session_state.option_data = option_data
+    
+    # Display Option Data
+    if 'option_data' in st.session_state:
+        data = st.session_state.option_data
+        
+        if data['success']:
+            st.success("Option data fetched successfully!")
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Underlying Price", f"₹{data['underlying']:.2f}")
+            col2.metric("PCR", f"{data['pcr']:.2f}")
+            col3.metric("Last Updated", data['timestamp'][:19] if data['timestamp'] != 'N/A' else 'N/A')
+            
+            # PCR Interpretation
+            st.subheader("📊 PCR Analysis")
+            pcr = data['pcr']
+            if pcr > 1.2:
+                st.warning("**High PCR (>1.2):** Bearish sentiment - More Put buying")
+            elif pcr < 0.8:
+                st.success("**Low PCR (<0.8):** Bullish sentiment - More Call buying") 
+            else:
+                st.info("**Neutral PCR (0.8-1.2):** Balanced market sentiment")
+                
+            show_educational_tooltip('pcr')
+            
+        else:
+            st.error("Could not fetch option chain data. Please try again later.")
+
+# ----------- INTRADAY SIGNALS TAB ----------- #
+else:
+    st.markdown('<div class="section-header">⚡ Intraday Signals</div>', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        symbol = st.selectbox("Symbol:", ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS"], index=0)
+    
+    with col2:
+        interval = st.selectbox("Interval:", ["5m", "15m", "1h"], index=0)
+    
+    with col3:
+        st.write("")
+        st.write("")
+        if st.button("Generate Signal", type="primary", use_container_width=True):
+            with st.spinner("Analyzing intraday data..."):
+                try:
+                    df = fetch_intraday(symbol, "1d", interval)
+                    if not df.empty:
+                        df = add_vwap_and_ema(df)
+                        last = df.iloc[-1]
+                        
+                        # Simple intraday signal
+                        price = last['Close']
+                        vwap = last['VWAP']
+                        ema9 = last['EMA9']
+                        ema21 = last['EMA21']
+                        
+                        bullish = (price > vwap) and (ema9 > ema21)
+                        bearish = (price < vwap) and (ema9 < ema21)
+                        
+                        if bullish:
+                            signal = "🟢 BUY - Bullish intraday bias"
+                        elif bearish:
+                            signal = "🔴 SELL - Bearish intraday bias"
+                        else:
+                            signal = "🟡 WAIT - No clear bias"
+                        
+                        st.session_state.intraday_signal = {
+                            'signal': signal,
+                            'price': price,
+                            'vwap': vwap,
+                            'ema9': ema9,
+                            'ema21': ema21,
+                            'success': True
+                        }
+                    else:
+                        st.session_state.intraday_signal = {'success': False}
+                        
+                except Exception as e:
+                    st.error(f"Intraday analysis error: {e}")
+                    st.session_state.intraday_signal = {'success': False}
+    
+    # Display Intraday Signal
+    if 'intraday_signal' in st.session_state:
+        data = st.session_state.intraday_signal
+        
+        if data['success']:
+            st.success("Intraday analysis complete!")
             
             # Display Metrics
-            col1, col2, col3 = st.columns(3)
-            col1.metric("**Last Close**", f"₹{data['last']['Close']:.2f}")
-            col2.metric("**VWAP**", f"₹{data['last']['VWAP']:.2f}")
-            col3.metric("**EMA 9/21**", f"₹{data['last']['EMA9']:.2f}/₹{data['last']['EMA21']:.2f}")
-
-            # Display Signal
-            st.markdown("#### 🎯 Option Bias Signal")
-            bias = data['bias']
-            if "BUY CE" in bias:
-                st.markdown(f'<div class="signal-buy">🟢 {bias}</div>', unsafe_allow_html=True)
-            elif "BUY PE" in bias:
-                st.markdown(f'<div class="signal-sell">🔴 {bias}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="signal-wait">🟡 {bias}</div>', unsafe_allow_html=True)
-            
-            st.info("""
-            **💡 Trading Tip:** 
-            - Combine this signal with option chain analysis for better accuracy
-            - Consider market sentiment and news events
-            - Always use proper risk management
-            """)
-    
-    with tab2:
-        st.markdown("#### Black-Scholes Greeks Calculator")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Option Parameters**")
-            S = st.number_input("**Underlying Price (S)**", value=20000.0, step=100.0, format="%.2f")
-            K = st.number_input("**Strike Price (K)**", value=20000.0, step=100.0, format="%.2f")
-            days = st.number_input("**Days to Expiry**", value=7, min_value=0, max_value=365, step=1)
-        
-        with col2:
-            st.markdown("**Market Parameters**")
-            iv_pct = st.number_input("**Implied Volatility %**", value=15.0, step=0.5, format="%.1f")
-            r_pct = st.number_input("**Risk-Free Rate %**", value=6.0, step=0.1, format="%.1f")
-            opt_type = st.selectbox("**Option Type**", ["CE", "PE"])
-        
-        if st.button("🧮 Calculate Greeks", type="primary", use_container_width=True):
-            try:
-                T = max(days, 0) / 365.0
-                sigma = max(iv_pct, 0.001) / 100.0
-                r = r_pct / 100.0
-                option_type = "call" if opt_type == "CE" else "put"
-
-                price = bs_price(S, K, T, r, sigma, option_type=option_type)
-                greeks = bs_greeks(S, K, T, r, sigma, option_type=option_type)
-
-                st.session_state.greeks_data = {
-                    'price': price,
-                    'greeks': greeks,
-                    'inputs': {'S': S, 'K': K, 'days': days, 'iv': iv_pct, 'r': r_pct, 'type': opt_type}
-                }
-
-            except Exception as e:
-                st.error(f"❌ Calculation error: {e}")
-
-        if 'greeks_data' in st.session_state:
-            data = st.session_state.greeks_data
-            
-            st.success("✅ Greeks calculated successfully!")
-            
-            # Display Results
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("**Theoretical Price**", f"₹{data['price']:.2f}")
-            col2.metric("**Delta**", f"{data['greeks']['delta']:.4f}")
-            col3.metric("**Theta/day**", f"{data['greeks']['theta']:.4f}")
-            col4.metric("**Vega/1% IV**", f"{data['greeks']['vega']:.4f}")
+            col1.metric("Current Price", f"₹{data['price']:.2f}")
+            col2.metric("VWAP", f"₹{data['vwap']:.2f}")
+            col3.metric("EMA 9", f"₹{data['ema9']:.2f}")
+            col4.metric("EMA 21", f"₹{data['ema21']:.2f}")
             
-            # Greeks Explanation
-            st.markdown("#### 📖 Greeks Explanation")
-            st.info("""
-            **Delta:** Price change for ₹1 change in underlying  
-            **Theta:** Daily time decay value  
-            **Vega:** Price change for 1% change in IV  
-            *Note: Calculations use Black-Scholes model approximations*
+            # Display Signal
+            st.subheader("🎯 Trading Signal")
+            signal = data['signal']
+            if "BUY" in signal:
+                st.markdown(f'<div class="signal-buy">{signal}</div>', unsafe_allow_html=True)
+            elif "SELL" in signal:
+                st.markdown(f'<div class="signal-sell">{signal}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="signal-wait">{signal}</div>', unsafe_allow_html=True)
+            
+            show_educational_tooltip('vwap')
+            
+            # Intraday Tips
+            st.subheader("💡 Intraday Trading Tips")
+            st.markdown("""
+            - **Risk Management:** Never risk more than 2% of your capital on a single trade
+            - **Stop Loss:** Always use stop loss to protect your capital
+            - **Market Hours:** Best trading times: 9:30-11:00 AM and 2:00-3:00 PM
+            - **Volume:** Confirm signals with volume analysis
             """)
 
 # Professional Footer
