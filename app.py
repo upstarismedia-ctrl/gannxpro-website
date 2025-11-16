@@ -1,4 +1,4 @@
-# app.py - GannXPro COMPLETE with Live Market Updates (Fixed Time Error)
+# app.py - GannXPro COMPLETE with Live Market Updates (Fixed All Errors)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,8 +6,8 @@ import requests
 import yfinance as yf
 import math
 import json
-import time as time_module  # Rename to avoid conflict
-from datetime import datetime, timedelta, time  # Import time from datetime
+import time as time_module
+from datetime import datetime, timedelta, time
 from math import log, sqrt, exp
 from scipy.stats import norm
 
@@ -226,16 +226,16 @@ def get_live_price(symbol):
         
         if not hist.empty:
             return {
-                'current': hist['Close'].iloc[-1],
-                'open': hist['Open'].iloc[0],
-                'high': hist['High'].max(),
-                'low': hist['Low'].min(),
-                'volume': hist['Volume'].iloc[-1],
-                'change': ((hist['Close'].iloc[-1] - hist['Open'].iloc[0]) / hist['Open'].iloc[0]) * 100,
+                'current': float(hist['Close'].iloc[-1]),
+                'open': float(hist['Open'].iloc[0]),
+                'high': float(hist['High'].max()),
+                'low': float(hist['Low'].min()),
+                'volume': int(hist['Volume'].iloc[-1]),
+                'change': float(((hist['Close'].iloc[-1] - hist['Open'].iloc[0]) / hist['Open'].iloc[0]) * 100),
                 'timestamp': datetime.now()
             }
     except Exception as e:
-        pass
+        st.error(f"Error fetching data for {symbol}: {str(e)}")
     return None
 
 def get_live_market_data():
@@ -265,11 +265,14 @@ def get_live_stock_data(symbols):
 
 def is_market_open():
     """Check if market is currently open"""
-    current_time = datetime.now().time()
-    market_open_time = time(9, 15)  # 9:15 AM
-    market_close_time = time(15, 30)  # 3:30 PM
-    
-    return market_open_time <= current_time <= market_close_time
+    try:
+        current_time = datetime.now().time()
+        market_open_time = time(9, 15)  # 9:15 AM
+        market_close_time = time(15, 30)  # 3:30 PM
+        
+        return market_open_time <= current_time <= market_close_time
+    except:
+        return False
 
 # ----------- LIVE STOCK SCREENER ----------- #
 def analyze_live_stock_patterns(symbol, name):
@@ -326,31 +329,37 @@ def calculate_live_rsi(prices, period=14):
     if len(prices) < period:
         return 50
     
-    deltas = np.diff(prices)
-    gains = np.where(deltas > 0, deltas, 0)
-    losses = np.where(deltas < 0, -deltas, 0)
-    
-    avg_gain = np.mean(gains[-period:])
-    avg_loss = np.mean(losses[-period:])
-    
-    if avg_loss == 0:
-        return 100
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    try:
+        deltas = np.diff(prices)
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+        
+        avg_gain = np.mean(gains[-period:])
+        avg_loss = np.mean(losses[-period:])
+        
+        if avg_loss == 0:
+            return 100
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    except:
+        return 50
 
 def calculate_live_macd(prices, fast=12, slow=26, signal=9):
     """Calculate MACD from price series"""
     if len(prices) < slow:
         return 0, 0
     
-    ema_fast = pd.Series(prices).ewm(span=fast).mean().iloc[-1]
-    ema_slow = pd.Series(prices).ewm(span=slow).mean().iloc[-1]
-    macd_line = ema_fast - ema_slow
-    signal_line = pd.Series([macd_line]).ewm(span=signal).mean().iloc[-1]
-    
-    return macd_line, signal_line
+    try:
+        ema_fast = pd.Series(prices).ewm(span=fast).mean().iloc[-1]
+        ema_slow = pd.Series(prices).ewm(span=slow).mean().iloc[-1]
+        macd_line = ema_fast - ema_slow
+        signal_line = pd.Series([macd_line]).ewm(span=signal).mean().iloc[-1]
+        
+        return macd_line, signal_line
+    except:
+        return 0, 0
 
 def get_live_technical_analysis(symbol):
     """Get live technical analysis for a symbol"""
@@ -381,79 +390,84 @@ def get_live_technical_analysis(symbol):
             'sma_20': sma_20,
             'timestamp': datetime.now()
         }
-    except:
+    except Exception as e:
+        st.error(f"Technical analysis error for {symbol}: {str(e)}")
         return None
 
 # ----------- LIVE OPTION CHAIN ----------- #
 def generate_live_option_chain(symbol):
     """Generate live option chain data with realistic updates"""
-    base_prices = {
-        'NIFTY': 21500 + np.random.randint(-100, 100),
-        'BANKNIFTY': 48000 + np.random.randint(-200, 200),
-        'RELIANCE': 2500 + np.random.randint(-20, 20),
-        'TCS': 3500 + np.random.randint(-30, 30),
-        'INFY': 1500 + np.random.randint(-15, 15),
-        'HDFCBANK': 1600 + np.random.randint(-15, 15),
-        'ICICIBANK': 1000 + np.random.randint(-10, 10)
-    }
-    
-    base_price = base_prices.get(symbol, 1000)
-    
-    # Generate strikes
-    strikes = []
-    for i in range(-5, 6):
-        if symbol in ['NIFTY', 'BANKNIFTY']:
-            strike = base_price + (i * 100)
-        else:
-            strike = base_price + (i * 50)
-        if strike > 0:
-            strikes.append(strike)
-    
-    option_data = []
-    for strike in strikes:
-        # Add some randomness to make it live
-        random_factor = np.random.uniform(0.8, 1.2)
+    try:
+        base_prices = {
+            'NIFTY': 21500 + np.random.randint(-100, 100),
+            'BANKNIFTY': 48000 + np.random.randint(-200, 200),
+            'RELIANCE': 2500 + np.random.randint(-20, 20),
+            'TCS': 3500 + np.random.randint(-30, 30),
+            'INFY': 1500 + np.random.randint(-15, 15),
+            'HDFCBANK': 1600 + np.random.randint(-15, 15),
+            'ICICIBANK': 1000 + np.random.randint(-10, 10)
+        }
         
-        # Call options
-        option_data.append({
-            'type': 'CE',
-            'strike': strike,
-            'expiry': '25-Jan-2024',
-            'oi': max(1000, int(10000 / abs(strike - base_price + 1) * random_factor)),
-            'volume': max(100, int(1000 / abs(strike - base_price + 1) * random_factor)),
-            'iv': 15 + (abs(strike - base_price) / base_price * 100 * random_factor),
-            'ltp': max(5, abs(strike - base_price) * 0.1 * random_factor),
-            'change': np.random.uniform(-15, 15)
-        })
+        base_price = base_prices.get(symbol, 1000)
         
-        # Put options
-        option_data.append({
-            'type': 'PE',
-            'strike': strike,
-            'expiry': '25-Jan-2024',
-            'oi': max(1000, int(12000 / abs(strike - base_price + 1) * random_factor)),
-            'volume': max(100, int(1200 / abs(strike - base_price + 1) * random_factor)),
-            'iv': 16 + (abs(strike - base_price) / base_price * 100 * random_factor),
-            'ltp': max(5, abs(strike - base_price) * 0.1 * random_factor),
-            'change': np.random.uniform(-15, 15)
-        })
-    
-    total_ce_oi = sum([item['oi'] for item in option_data if item['type'] == 'CE'])
-    total_pe_oi = sum([item['oi'] for item in option_data if item['type'] == 'PE'])
-    pcr = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0
-    
-    return {
-        'success': True,
-        'symbol': symbol,
-        'underlying_price': base_price,
-        'timestamp': datetime.now().strftime("%d-%b-%Y %H:%M:%S"),
-        'pcr': pcr,
-        'total_ce_oi': total_ce_oi,
-        'total_pe_oi': total_pe_oi,
-        'option_data': option_data,
-        'expiries': ['25-Jan-2024', '01-Feb-2024', '08-Feb-2024'],
-        'data_source': 'LIVE'
-    }
+        # Generate strikes
+        strikes = []
+        for i in range(-5, 6):
+            if symbol in ['NIFTY', 'BANKNIFTY']:
+                strike = base_price + (i * 100)
+            else:
+                strike = base_price + (i * 50)
+            if strike > 0:
+                strikes.append(strike)
+        
+        option_data = []
+        for strike in strikes:
+            # Add some randomness to make it live
+            random_factor = np.random.uniform(0.8, 1.2)
+            
+            # Call options
+            option_data.append({
+                'type': 'CE',
+                'strike': strike,
+                'expiry': '25-Jan-2024',
+                'oi': max(1000, int(10000 / abs(strike - base_price + 1) * random_factor)),
+                'volume': max(100, int(1000 / abs(strike - base_price + 1) * random_factor)),
+                'iv': 15 + (abs(strike - base_price) / base_price * 100 * random_factor),
+                'ltp': max(5, abs(strike - base_price) * 0.1 * random_factor),
+                'change': np.random.uniform(-15, 15)
+            })
+            
+            # Put options
+            option_data.append({
+                'type': 'PE',
+                'strike': strike,
+                'expiry': '25-Jan-2024',
+                'oi': max(1000, int(12000 / abs(strike - base_price + 1) * random_factor)),
+                'volume': max(100, int(1200 / abs(strike - base_price + 1) * random_factor)),
+                'iv': 16 + (abs(strike - base_price) / base_price * 100 * random_factor),
+                'ltp': max(5, abs(strike - base_price) * 0.1 * random_factor),
+                'change': np.random.uniform(-15, 15)
+            })
+        
+        total_ce_oi = sum([item['oi'] for item in option_data if item['type'] == 'CE'])
+        total_pe_oi = sum([item['oi'] for item in option_data if item['type'] == 'PE'])
+        pcr = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0
+        
+        return {
+            'success': True,
+            'symbol': symbol,
+            'underlying_price': base_price,
+            'timestamp': datetime.now().strftime("%d-%b-%Y %H:%M:%S"),
+            'pcr': pcr,
+            'total_ce_oi': total_ce_oi,
+            'total_pe_oi': total_pe_oi,
+            'option_data': option_data,
+            'expiries': ['25-Jan-2024', '01-Feb-2024', '08-Feb-2024'],
+            'data_source': 'LIVE'
+        }
+    except Exception as e:
+        st.error(f"Option chain error for {symbol}: {str(e)}")
+        return {'success': False}
 
 # ----------- LIVE INTRADAY SIGNALS ----------- #
 def get_live_intraday_signal(symbol):
@@ -496,7 +510,7 @@ def get_live_intraday_signal(symbol):
             return "🟡 WAIT - Mixed signals"
             
     except Exception as e:
-        return f"Signal unavailable"
+        return f"Signal unavailable: {str(e)}"
 
 # ----------- STREAMLIT UI ----------- #
 st.sidebar.header("🔧 Navigation")
@@ -628,6 +642,8 @@ elif app_mode == "Market Dashboard":
                 st.metric(f"{symbol}", 
                          f"₹{data['current']:.2f}", 
                          f"{data['change']:.2f}%")
+    else:
+        st.warning("Unable to fetch live market data. Please try again later.")
 
 # ----------- LIVE TECHNICAL ANALYSIS TAB ----------- #
 elif app_mode == "Technical Analysis":
@@ -680,6 +696,8 @@ elif app_mode == "Technical Analysis":
         
         with col4:
             st.metric("Live Price", f"₹{tech_data['current_price']:.2f}")
+    else:
+        st.error("Unable to fetch technical analysis data. Please try again.")
 
 # ----------- LIVE OPTION CHAIN TAB ----------- #
 elif app_mode == "Option Chain":
@@ -715,9 +733,28 @@ elif app_mode == "Option Chain":
         col2.metric("PCR", f"{option_data['pcr']:.2f}")
         col3.metric("Total CE OI", f"{option_data['total_ce_oi']:,}")
         col4.metric("Total PE OI", f"{option_data['total_pe_oi']:,}")
+        
+        # Display option data in a table
+        st.subheader("📋 Option Chain Data")
+        df_data = []
+        for option in option_data['option_data']:
+            df_data.append({
+                'Type': option['type'],
+                'Strike': option['strike'],
+                'LTP': f"₹{option['ltp']:.2f}",
+                'Change': f"{option['change']:.2f}%",
+                'OI': f"{option['oi']:,}",
+                'Volume': f"{option['volume']:,}",
+                'IV': f"{option['iv']:.1f}%"
+            })
+        
+        df = pd.DataFrame(df_data)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.error("Unable to generate option chain data. Please try again.")
 
 # ----------- LIVE INTRADAY SIGNALS TAB ----------- #
-else:
+elif app_mode == "Intraday Signals":
     st.markdown('<div class="section-header">⚡ Live Intraday Signals</div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -749,6 +786,17 @@ else:
             st.markdown(f'<div class="signal-sell">{live_signal}</div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="signal-wait">{live_signal}</div>', unsafe_allow_html=True)
+        
+        # Additional analysis
+        st.subheader("📊 Additional Analysis")
+        tech_data = get_live_technical_analysis(selected_symbol)
+        if tech_data:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("RSI", f"{tech_data['rsi']:.1f}")
+            col2.metric("MACD", f"{tech_data['macd']:.3f}")
+            col3.metric("Trend vs SMA20", "Above" if tech_data['current_price'] > tech_data['sma_20'] else "Below")
+    else:
+        st.error("Unable to generate trading signal. Please try again.")
 
 # Professional Footer
 st.markdown("---")
