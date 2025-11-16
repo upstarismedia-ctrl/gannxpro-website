@@ -1,4 +1,4 @@
-# app.py - GannXPro COMPLETE with Live Market Updates (Fixed)
+# app.py - GannXPro COMPLETE with Live Market Updates (Fixed Time Error)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,8 +6,8 @@ import requests
 import yfinance as yf
 import math
 import json
-import time
-from datetime import datetime, timedelta
+import time as time_module  # Rename to avoid conflict
+from datetime import datetime, timedelta, time  # Import time from datetime
 from math import log, sqrt, exp
 from scipy.stats import norm
 
@@ -156,7 +156,7 @@ with col2:
     if st.button("🔄 Refresh Now", use_container_width=True):
         st.rerun()
 with col3:
-    st.markdown('<div style="text-align: right;">↻ Auto-refresh: Manual</div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: right;">Manual Refresh Enabled</div>', unsafe_allow_html=True)
 
 # ----------- GLOBAL STOCK LIST ----------- #
 def get_all_stocks():
@@ -263,6 +263,14 @@ def get_live_stock_data(symbols):
             stock_data[symbol] = data
     return stock_data
 
+def is_market_open():
+    """Check if market is currently open"""
+    current_time = datetime.now().time()
+    market_open_time = time(9, 15)  # 9:15 AM
+    market_close_time = time(15, 30)  # 3:30 PM
+    
+    return market_open_time <= current_time <= market_close_time
+
 # ----------- LIVE STOCK SCREENER ----------- #
 def analyze_live_stock_patterns(symbol, name):
     """Analyze live stock patterns"""
@@ -308,6 +316,7 @@ def run_live_screener():
         result = analyze_live_stock_patterns(symbol, name)
         if result:
             results.append(result)
+        time_module.sleep(0.1)  # Small delay to avoid rate limiting
     
     return results
 
@@ -517,24 +526,29 @@ if app_mode == "Stock Screener":
     
     with col2:
         if st.button("🔄 Scan Live Data", type="primary", use_container_width=True):
-            st.session_state.screener_results = None
+            with st.spinner("Scanning live market data..."):
+                stock_data = run_live_screener()
+                if stock_data:
+                    categorized = {
+                        'open_high': [s for s in stock_data if s['open_high']],
+                        'open_low': [s for s in stock_data if s['open_low']]
+                    }
+                    st.session_state.screener_results = categorized
+                    st.success(f"✅ Live scan complete! Found {len(categorized['open_high'])} Open=High and {len(categorized['open_low'])} Open=Low stocks")
+                else:
+                    st.error("No live data found. Please try again during market hours.")
     
-    # Get live data
-    stock_data = run_live_screener()
-    if stock_data:
-        categorized = {
-            'open_high': [s for s in stock_data if s['open_high']],
-            'open_low': [s for s in stock_data if s['open_low']]
-        }
+    # Display Live Results
+    if 'screener_results' in st.session_state:
+        results = st.session_state.screener_results
         
-        # Display Live Results
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"🔴 Open = High ({len(categorized['open_high'])} stocks)")
+            st.subheader(f"🔴 Open = High ({len(results['open_high'])} stocks)")
             st.markdown("**Bearish Pattern - Potential selling pressure**")
             
-            for stock in categorized['open_high']:
+            for stock in results['open_high']:
                 change_color = "market-up" if stock['change_today'] > 0 else "market-down"
                 st.markdown(f"""
                 <div class="stock-card open-high">
@@ -546,10 +560,10 @@ if app_mode == "Stock Screener":
                 """, unsafe_allow_html=True)
         
         with col2:
-            st.subheader(f"🟢 Open = Low ({len(categorized['open_low'])} stocks)")
+            st.subheader(f"🟢 Open = Low ({len(results['open_low'])} stocks)")
             st.markdown("**Bullish Pattern - Potential buying opportunity**")
             
-            for stock in categorized['open_low']:
+            for stock in results['open_low']:
                 change_color = "market-up" if stock['change_today'] > 0 else "market-down"
                 st.markdown(f"""
                 <div class="stock-card open-low">
@@ -582,10 +596,8 @@ elif app_mode == "Market Dashboard":
             banknifty = market_data['banknifty']
             col2.metric("Bank Nifty", f"₹{banknifty['current']:.2f}", f"{banknifty['change']:.2f}%")
         
-        # Market status based on current time
-        current_time = datetime.now().time()
-        market_open = time(9, 15) <= current_time <= time(15, 30)
-        market_status = "🟢 OPEN" if market_open else "🔴 CLOSED"
+        # Market status
+        market_status = "🟢 OPEN" if is_market_open() else "🔴 CLOSED"
         col3.metric("Market Status", market_status)
         
         col4.metric("Last Updated", datetime.now().strftime("%H:%M:%S"))
@@ -636,7 +648,7 @@ elif app_mode == "Technical Analysis":
         st.write("")
         st.write("")
         if st.button("🔄 Update Analysis", type="primary", use_container_width=True):
-            st.session_state.tech_analysis = None
+            st.rerun()
     
     # Get live technical analysis
     tech_data = get_live_technical_analysis(selected_symbol)
@@ -689,7 +701,7 @@ elif app_mode == "Option Chain":
         st.write("")
         st.write("")
         if st.button("🔄 Update Chain", type="primary", use_container_width=True):
-            st.session_state.option_data = None
+            st.rerun()
     
     # Get live option chain
     option_data = generate_live_option_chain(selected_symbol)
@@ -723,7 +735,7 @@ else:
         st.write("")
         st.write("")
         if st.button("🔄 Get Live Signal", type="primary", use_container_width=True):
-            st.session_state.live_signal = None
+            st.rerun()
     
     # Get live signal
     live_signal = get_live_intraday_signal(selected_symbol)
